@@ -1,6 +1,6 @@
 # Power Management Flight Software
 
-This a student project as part of the Space Systems Engineering for Engineering Professionals
+This is a student project as part of the Space Systems Engineering for Engineering Professionals
 at Johns Hopkins University. The purpose of the application is to determine whether the power
 distribution unit within the instrument assembly has appropriete capacitor charge to perform
 an observation.
