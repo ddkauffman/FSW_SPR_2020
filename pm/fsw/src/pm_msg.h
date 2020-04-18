@@ -38,6 +38,9 @@
 */
 #define PM_NOOP_CC                 0
 #define PM_RESET_CC                1
+#define PM_TO_WISE_CAP_ACTIVE_CC   2
+#define PM_TO_WISE_CAP_DISCHARGE_CC 3
+#define PM_TO_WISE_POWER_SBC_CC 4
 
 /*
 ** Local Structure Declarations
