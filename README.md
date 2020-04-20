@@ -17,5 +17,5 @@ Add `THE_APPS += pm` to `${CFS_MISSION}cfs/build/cpu1/Makefile`
 cd
 git clone https://github.com/ddkauffman/FSW_SPR_2020.git fsw_spr_2020
 cd fsw_spr_2020
-./install.sh
+sudo ./install.sh
 ```

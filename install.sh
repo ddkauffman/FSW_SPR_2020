@@ -13,4 +13,14 @@ set -x && yes | cp -rf ./sch/fsw/tables/ ${CFS_MISSION}/apps/sch/fsw/
 # Overwrite project workbooks into the config folder
 set -x && yes | cp -rf workbooks/* ~/cfs_demo/config/targets/CFS/cmd_tlm/
 
-echo "Done!"
+echo "Finished copying files! starting build ..."
+
+cd ${CFS_MISSION}
+
+set -x && . ./setvars.sh
+
+set -x && cd ${CFS_MISSION}/build/cpu1 && make clean && make;
+
+set -x && cd ${CFS_MISSION}/build/cpu1/exe && ./core-linux.bin --reset=PO;
+
+
