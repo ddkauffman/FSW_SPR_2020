@@ -902,9 +902,9 @@ void PM_ReportHousekeeping()
 void PM_SendOutData()
 {
     /* TODO:  Add code to update output data, if needed, here.  */
-
-    CFE_SB_TimeStampMsg((CFE_SB_Msg_t*)&g_PM_AppData.OutData);
-    CFE_SB_SendMsg((CFE_SB_Msg_t*)&g_PM_AppData.OutData);
+    PM_ReportHousekeeping();
+    // CFE_SB_TimeStampMsg((CFE_SB_Msg_t*)&g_PM_AppData.OutData);
+    // CFE_SB_SendMsg((CFE_SB_Msg_t*)&g_PM_AppData.OutData);
 }
     
 /*=====================================================================================
