@@ -50,12 +50,21 @@ typedef struct
     uint8              TlmHeader[CFE_SB_TLM_HDR_SIZE];
     uint8              usCmdCnt;
     uint8              usCmdErrCnt;
+    uint8              actCap;
 
     /* TODO:  Add declarations for additional housekeeping data here */
 
 } PM_HkTlm_t;
 
+typedef struct
+{
+    uint8              CmdHeader[CFE_SB_CMD_HDR_SIZE];
 
+    uint8              setCap;
+
+    /* TODO:  Add declarations for additional housekeeping data here */
+
+} PM_TO_WISE_CAP_ACTIVE_t;
 #endif /* _PM_MSG_H_ */
 
 /*=======================================================================================

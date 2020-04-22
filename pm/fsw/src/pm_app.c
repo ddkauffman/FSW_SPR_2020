@@ -935,12 +935,16 @@ void PM_ProcessNewAppCmds(CFE_SB_Msg_t* MsgPtr)
                 break;
 
             case PM_TO_WISE_CAP_ACTIVE_CC:
+		g_PM_AppData.HkTlm.usCmdCnt++;		
                 CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                                   "PM - Recvd ACTIVE CAP cmdId (%d)", uiCmdCode);
-                send_whe_set_active_command(0);
+               	PM_TO_WISE_CAP_ACTIVE_t *CmdPtr = (PM_TO_WISE_CAP_ACTIVE_t *) MsgPtr;
+                send_whe_set_active_command(CmdPtr->setCap);
+		g_PM_AppData.HkTlm.actCap = CmdPtr->setCap;
                 break;;
             
             case PM_TO_WISE_CAP_DISCHARGE_CC:
+		g_PM_AppData.HkTlm.usCmdCnt++;
                 CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                                   "PM - Recvd DISCHARGE cmdId (%d)", uiCmdCode);
                 send_discharge_command();
