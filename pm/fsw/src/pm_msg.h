@@ -48,8 +48,8 @@
 typedef struct
 {
     uint8              TlmHeader[CFE_SB_TLM_HDR_SIZE];
-    uint8              usCmdCnt;
-    uint8              usCmdErrCnt;
+    uint16             usCmdCnt;
+    uint16             usCmdErrCnt;
     uint8              actCap;
 
     /* TODO:  Add declarations for additional housekeeping data here */
