@@ -33,6 +33,7 @@
 #include "ds_msgids.h"
 #include "lc_msgids.h"
 #include "whe_msgids.h"
+#include "wise_msgids.h"
 // #include "app_a_msgids.h"
 // #include "app_b_msgids.h"
 #include "pm_msgids.h"
@@ -48,6 +49,7 @@ static TO_subsciption_t  TO_SubTable[] =
             // {APP_A_HK_TLM_MID,    {0,0},  4},
             // {APP_B_HK_TLM_MID,    {0,0},  4},
             {PM_HK_TLM_MID,    {0,0},  4},
+            {WISE_HK_TLM_MID,    {0,0},  4},
 
 #if 1
             /* Add these if needed */
