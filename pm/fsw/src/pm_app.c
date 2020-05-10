@@ -44,6 +44,8 @@
 #include "pm_platform_cfg.h"
 #include "pm_mission_cfg.h"
 #include "pm_app.h"
+#include "/home/fsw/FSW_SPR_2020/supplimental/wise/fsw/src/wise_msg.h"
+
 
 // include msgids from whe
 // #include "whe_msgids.h"
@@ -94,6 +96,10 @@ struct
 /*
 ** Local Function Definitions
 */
+
+void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
+
+}
 
 int get_cap_with_max_charge(int *charges, int *flags){
     int idx = 0;
@@ -152,6 +158,8 @@ int is_cap_overcharged_threshold(float cap_level){
     }
     return 0;
 }
+
+
 
 
 void PM_ProcessWheData(CFE_SB_Msg_t* TlmMsgPtr){
@@ -393,9 +401,9 @@ int32 PM_InitPipe()
         ** Examples:
         **     CFE_SB_Subscribe(GNCEXEC_OUT_DATA_MID, g_PM_AppData.TlmPipeId);
         */
-        // TODO: Sub to whe
-        // Get TLM from whe 
-        // CFE_SB_Subscribe(WHE_HK_TLM_MID, g_PM_AppData.TlmPipeId);
+        
+        // Subscribe to the WISE Instrument HK TLM 
+        CFE_SB_Subscribe(0x08CC, g_PM_AppData.TlmPipeId);
     }
     else
     {
@@ -754,6 +762,14 @@ void PM_ProcessNewData()
                 */
 
                 //
+
+                case 0x08CC:;
+                        WISE_HkTlm_t *wise_tlm = (WISE_HkTlm_t *) TlmMsgPtr;
+                        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                  "PM - WISE SBC STATE (%d)", wise_tlm->wiseSbcState);
+                        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                        "PM - Recvd WISE TLM (0x%08X)", TlmMsgId);
+                    break;
                 case 1:
                     // Process WHE TLM as it comes in
                     PM_ProcessWheData(TlmMsgPtr);
