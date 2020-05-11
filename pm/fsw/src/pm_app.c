@@ -44,6 +44,9 @@
 #include "pm_platform_cfg.h"
 #include "pm_mission_cfg.h"
 #include "pm_app.h"
+#include "/home/fsw/cfs/apps/wise/fsw/src/wise_msg.h"
+#include "/home/fsw/cfs/apps/wise/fsw/platform_inc/wise_msgids.h"
+
 
 // include msgids from whe
 // #include "whe_msgids.h"
@@ -51,6 +54,32 @@
 /*
 ** Local Defines
 */
+#define MAX_SAFE_CHARGE 10000 // 100%
+#define MIN_SAFE_CHARGE 0 // 0%
+#define MIN_SAFE_DURING_OBS -500 // -5%
+
+#define SECONDS_TO_START_DISCHARGE 3
+#define SECONDS_TO_COMPLETE_OBS 10
+#define PERCENT_DISCHARGE_PER_SECOND 10 
+
+#define MAX_CAP_LOSE_PER_SECOND 700 // 7%
+
+#define ALL_OR_ONE_CAPS_CHARGE_RATE 300 // 3%
+#define TWO_CAPS_CHARGE_RATE 150 // 3%
+
+#define MAX_CHARGE 6000
+#define MIN_OBS_CHARGE 1000
+
+#define CAP_A 0
+#define CAP_B 1
+#define CAP_C 2
+
+#define CHARGING 0
+#define LEAKING 1
+#define DISCHARGING 2
+#define BROKEN 3
+
+#define OBSERVING 3
 
 /*
 ** Local Structure Declarations
@@ -64,131 +93,244 @@
 ** Global Variables
 */
 PM_AppData_t  g_PM_AppData;
+WISE_HkTlm_t* g_WISE_HkTlm;
+
+uint16 cap_charges[3];
+uint16 cap_states[3];
+uint16 gActiveCapcitor;
+uint16 gWiseSbcState;
+
+
 
 /*
 ** Local Variables
 */
-
-struct 
-{
-    uint8              whe_command_error_count;
-    uint8              whe_command_count;
-    uint8			   whe_cap_a_charge;
-    uint8			   whe_cap_a_state;
-    uint8			   whe_cap_b_charge;
-    uint8			   whe_cap_b_state;
-      uint8			   whe_cap_c_charge;
-    uint8			   whe_cap_c_state;
-    uint8			   whe_sbc_state;
-    uint8			   whe_temp;
-    uint8			   whe_louver;
-    uint8			   whe_htr;
-    uint8			   whe_act_cap;
-    uint8			   whe_dmg_state;
-    uint8              whe_dmg_cnt;
-    uint8              whe_obs_cnt;
-    uint8              whe_suc_obs;
-
-} whe_hk_tlm_t;
+int cap_pick;
 
 /*
 ** Local Function Definitions
 */
 
-int get_cap_with_max_charge(int *charges, int *flags){
-    int idx = 0;
-    int max = charges[idx];
 
-    for (int i = 0; i < 3; ++i)
-    {
-        if (charges[i] > max && flags[i] == 1)
-        {
-            max = (int)charges[i];
-            idx = i;
+
+int select_active_capacitor(){
+
+    int selected_capacitor = NULL;
+
+    for(int capacitor = 0; capacitor < 3; capacitor++){
+
+        if(g_WISE_HkTlm->wiseActiveCap == capacitor){
+            if(cap_charges[capacitor] > (MAX_SAFE_CHARGE - 500)){
+                switch(capacitor){
+                case CAP_A:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_A, CAP_B), min_of_two_charge(CAP_A, CAP_C));
+                    break;
+                case CAP_B:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_B, CAP_A), min_of_two_charge(CAP_B, CAP_C));
+                    break;
+                case CAP_C:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_C, CAP_A), min_of_two_charge(CAP_C, CAP_B));
+                    break;
+                } 
+            }
+            return;
+        }
+
+        if(cap_charges[capacitor] < MIN_OBS_CHARGE){
+            continue;
+        }
+
+        if(cap_states == LEAKING){
+            continue;
+        }
+
+        if(cap_states == BROKEN){
+            continue;
+        }
+
+        if(cap_charges[capacitor] >= MIN_OBS_CHARGE && (cap_charges[g_WISE_HkTlm->wiseActiveCap] < MIN_OBS_CHARGE)){
+            switch(capacitor){
+                case CAP_A:;
+                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_A, CAP_B), max_of_two_charge(CAP_A, CAP_C));
+                    break;
+                case CAP_B:;
+                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_B, CAP_A), max_of_two_charge(CAP_B, CAP_C));
+                    break;
+                case CAP_C:;
+                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_C, CAP_A), max_of_two_charge(CAP_C, CAP_B));
+                    break;
+            } 
         }
     }
-    return idx;
+
+    return selected_capacitor;
 }
 
-void send_discharge_command(void){
-    /* define command to send */
-    CFE_SB_Msg_t cmd;
-    memset((void*)&cmd, 0x00, sizeof(CFE_SB_Msg_t));
 
-    /* Initialize message to send to whe*/
-    CFE_SB_InitMsg(&cmd, 0x1882, sizeof(cmd), TRUE);
+int min_of_two_charge(int CAP_1,  int CAP_2){
+    if(cap_charges[CAP_1] <= cap_charges[CAP_2]){
+        return CAP_1;
+    } 
+    return CAP_2;
+}
+
+
+int max_of_two_charge(int CAP_1,  int CAP_2){
+    if(cap_charges[CAP_1] >= cap_charges[CAP_2]){
+        return CAP_1;
+    } 
+    return CAP_2;
+}
+
+void send_discharge_command(uint8 cap){
+    // If we aren't observing with this cap send discharge
+
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - Thinking abuot sending dis for cap (%d)", cap);
+
+    /* define command to send */
+    WISE_ParmCmd_t cmd;
+    memset((void*)&cmd, 0x00, sizeof(WISE_ParmCmd_t));
+
+    /* Initialize message to send to WISE*/
+    CFE_SB_InitMsg(&cmd, WISE_CMD_MID, sizeof(cmd), TRUE);
 
     /* Set command code for message */
-    CFE_SB_SetCmdCode((CFE_SB_Msg_t*)&cmd, 3);
+    CFE_SB_SetCmdCode((WISE_ParmCmd_t*)&cmd, WISE_CAP_DISCHARGE_CC);
+    cmd.target = cap; 
 
     /* Set Timestamp of message */
-    CFE_SB_TimeStampMsg((CFE_SB_Msg_t*)&cmd);
+    CFE_SB_TimeStampMsg((WISE_ParmCmd_t*)&cmd);
 
     /* Send the message on the CFE Bus */
-    CFE_SB_SendMsg((CFE_SB_Msg_t*)&cmd);
-}
+    CFE_SB_SendMsg((WISE_ParmCmd_t*)&cmd);
 
-void send_whe_set_active_command(int cap){
-    /* define command to send */
-    CFE_SB_Msg_t cmd;
-    memset((void*)&cmd, 0x00, sizeof(CFE_SB_Msg_t));
-
-    /* Initialize message to send to whe*/
-    CFE_SB_InitMsg(&cmd, 0x1882, sizeof(cmd), TRUE);
-
-    /* Set command code for message */
-    CFE_SB_SetCmdCode((CFE_SB_Msg_t*)&cmd, 2);
-
-    /* Set Timestamp of message */
-    CFE_SB_TimeStampMsg((CFE_SB_Msg_t*)&cmd);
-
-    /* Send the message on the CFE Bus */
-    CFE_SB_SendMsg((CFE_SB_Msg_t*)&cmd);
-}
-
-int is_cap_overcharged_threshold(float cap_level){
-    if(cap_level > 100){
-        return 1;
-    }
     return 0;
 }
 
 
-void PM_ProcessWheData(CFE_SB_Msg_t* TlmMsgPtr){
-    // ProcessWheData
+int set_wise_active_cap(uint8 cap){
 
-    int CAP_FLAGS[3] = {
-        0,
-        0,
-        0
-    };
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - Thinking abuot sending active for cap (%d)", cap);
 
-    int CAP_CHARGES[3] = {
-        whe_hk_tlm_t.whe_cap_a_charge,
-        whe_hk_tlm_t.whe_cap_b_charge,
-        whe_hk_tlm_t.whe_cap_c_charge
-    }; 
+    if(cap_states[cap] == 0){
+        /* define command to send */
+        WISE_ParmCmd_t cmd;
+        memset((void*)&cmd, 0x00, sizeof(WISE_ParmCmd_t));
 
-    int CAP_STATES[3] = {
-        whe_hk_tlm_t.whe_cap_a_state,
-        whe_hk_tlm_t.whe_cap_b_state,
-        whe_hk_tlm_t.whe_cap_c_state
-    };
+        /* Initialize message to send to whe*/
+        CFE_SB_InitMsg(&cmd, WISE_CMD_MID, sizeof(cmd), TRUE);
 
-    int whe_sbc_state = 0;
-    for(int i = 0; i < CAP_CHARGES; i++){
-        if (is_cap_overcharged_threshold(CAP_CHARGES[i]) && CAP_STATES[i] != "ACTIVE"){
-            send_discharge_command();
-            CAP_FLAGS[i] = 0;
-        }
-        if (CAP_CHARGES[i] > 80 && CAP_STATES[i] != "ACTIVE" && ( whe_sbc_state == 0) || (whe_sbc_state == 0) ){
-            CAP_FLAGS[i] = 1; 
-        }
+        /* Set command code for message */
+        CFE_SB_SetCmdCode((WISE_ParmCmd_t*)&cmd, WISE_CAP_ACTIVE_CC);
+        cmd.target = cap;
+
+        /* Set Timestamp of message */
+        CFE_SB_TimeStampMsg((WISE_ParmCmd_t*)&cmd);
+
+        /* Send the message on the CFE Bus */
+        CFE_SB_SendMsg((WISE_ParmCmd_t*)&cmd);
+
+        return 0;
+    }
+    return 1;
+}
+
+
+int get_number_of_discharging_caps(uint16 caps[]){
+    int number_of_caps_discharging = 0;
+
+    for(int i = 0; i < 3; i++){
+        if(caps[i] == 2){
+            ++number_of_caps_discharging;
+        } 
     }
 
-    int idx = get_cap_with_max_charge(CAP_CHARGES, CAP_FLAGS);
-    send_whe_set_active_command(idx);
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - Getting Number of Dis Caps {%d}", number_of_caps_discharging);
 
+    return number_of_caps_discharging;
+}
+
+
+void capacitor_charge_handler(int buffer){
+
+    int number_of_caps_discharging = get_number_of_discharging_caps(cap_states);
+
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - Number of discharging CAPS!!!! (%d)", number_of_caps_discharging);
+    
+    if(number_of_caps_discharging > 1){
+        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                            "PM - Max Capacitors Being Discharged"); 
+        return;
+    } else {
+       for(int capacitor = 0; capacitor < 3; capacitor++){
+
+            if(capacitor == g_WISE_HkTlm->wiseActiveCap){
+                continue;
+            }
+
+            if(cap_charges[capacitor] >= MAX_SAFE_CHARGE){
+               send_discharge_command(capacitor);
+               return;   
+            }
+
+           if(cap_charges[capacitor] >= MAX_SAFE_CHARGE - (SECONDS_TO_START_DISCHARGE * ALL_OR_ONE_CAPS_CHARGE_RATE + buffer)){
+                if(cap_states[capacitor] == DISCHARGING){
+                    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                    "PM - CAP Doesn't need to be discharged");
+                    continue;
+                }
+                if(capacitor == g_WISE_HkTlm->wiseActiveCap && g_WISE_HkTlm->wiseSbcState == OBSERVING){
+                    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                            "PM - Active Cap should already discharge during OBS");
+                    continue; 
+                } 
+                send_discharge_command(capacitor); 
+           }
+       } 
+    }
+}
+
+void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
+    
+    // Global Reference to WISE HK TLM
+    g_WISE_HkTlm = (WISE_HkTlm_t *) TlmMsgPtr;
+
+    cap_charges[0] = g_WISE_HkTlm->wiseCapA_Charge;
+    cap_charges[1] = g_WISE_HkTlm->wiseCapB_Charge;
+    cap_charges[2] = g_WISE_HkTlm->wiseCapC_Charge;
+  
+    cap_states[0] = g_WISE_HkTlm->wiseCapA_State;
+    cap_states[1] = g_WISE_HkTlm->wiseCapB_State,
+    cap_states[2] = g_WISE_HkTlm->wiseCapC_State; 
+
+    switch(g_WISE_HkTlm->wiseSbcState){
+        case 0:
+            CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                "PM - WISE SBC STATE: (%d), SBC Off, nothing to manage.", g_WISE_HkTlm->wiseSbcState);
+            break;
+        case 1:;
+            capacitor_charge_handler(5000);
+            cap_pick = select_active_capacitor();
+            if(cap_pick != NULL){
+                set_wise_active_cap(cap_pick);
+            }
+            break;
+        case 2:;
+            capacitor_charge_handler(0);
+            cap_pick = select_active_capacitor();
+            if(cap_pick != NULL){
+                set_wise_active_cap(cap_pick);
+            }
+            break; 
+        case 3:;
+             CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                "PM - WISE SBC STATE: (%d), SBC ERROR!!! Cannot take further action!", g_WISE_HkTlm->wiseSbcState);
+            break;
+    }
 }
     
 /*=====================================================================================
@@ -393,9 +535,9 @@ int32 PM_InitPipe()
         ** Examples:
         **     CFE_SB_Subscribe(GNCEXEC_OUT_DATA_MID, g_PM_AppData.TlmPipeId);
         */
-        // TODO: Sub to whe
-        // Get TLM from whe 
-        // CFE_SB_Subscribe(WHE_HK_TLM_MID, g_PM_AppData.TlmPipeId);
+        
+        // Subscribe to the WISE Instrument HK TLM 
+        CFE_SB_Subscribe(WISE_HK_TLM_MID, g_PM_AppData.TlmPipeId);
     }
     else
     {
@@ -754,11 +896,12 @@ void PM_ProcessNewData()
                 */
 
                 //
-                case 1:
-                    // Process WHE TLM as it comes in
-                    PM_ProcessWheData(TlmMsgPtr);
-                    break; 
 
+                case WISE_HK_TLM_MID:;
+                        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                        "PM - Recvd WISE TLM (0x%08X)", TlmMsgId);
+                        PM_ProcessWISEData(TlmMsgPtr);
+                    break;
                 default:
                     CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                                       "PM - Recvd invalid TLM msgId (0x%08X)", TlmMsgId);
@@ -935,20 +1078,20 @@ void PM_ProcessNewAppCmds(CFE_SB_Msg_t* MsgPtr)
                 break;
 
             case PM_TO_WISE_CAP_ACTIVE_CC:
-		g_PM_AppData.HkTlm.usCmdCnt++;		
+		        g_PM_AppData.HkTlm.usCmdCnt++;		
                	PM_TO_WISE_CAP_ACTIVE_t *CmdPtr = (PM_TO_WISE_CAP_ACTIVE_t *) MsgPtr;
                 send_whe_set_active_command(CmdPtr->setCap);
-		int value = CmdPtr->setCap; 
-		g_PM_AppData.HkTlm.actCap = value;
+		        int value = CmdPtr->setCap; 
+		        g_PM_AppData.HkTlm.actCap = value;
                 CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                                   "PM - Recvd ACTIVE CAP cmdId (%d) , Cap %d", uiCmdCode, value);
                 break;;
             
             case PM_TO_WISE_CAP_DISCHARGE_CC:
-		g_PM_AppData.HkTlm.usCmdCnt++;
+		        g_PM_AppData.HkTlm.usCmdCnt++;
                 CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                                   "PM - Recvd DISCHARGE cmdId (%d)", uiCmdCode);
-                send_discharge_command();
+                send_discharge_command(CmdPtr->setCap);
                 break;
             
            
