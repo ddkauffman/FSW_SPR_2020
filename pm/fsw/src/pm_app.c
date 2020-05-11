@@ -44,7 +44,7 @@
 #include "pm_platform_cfg.h"
 #include "pm_mission_cfg.h"
 #include "pm_app.h"
-#include "/home/fsw/FSW_SPR_2020/supplimental/wise/fsw/src/wise_msg.h"
+#include "/home/fsw/cfs/apps/wise/fsw/src/wise_msg.h"
 #include "/home/fsw/cfs/apps/wise/fsw/platform_inc/wise_msgids.h"
 
 
