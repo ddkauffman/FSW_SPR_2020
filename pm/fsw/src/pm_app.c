@@ -54,7 +54,7 @@
 /*
 ** Local Defines
 */
-#define MAX_CHARGE 10000
+#define MAX_CHARGE 5000
 /*
 ** Local Structure Declarations
 */
@@ -137,6 +137,24 @@ void set_wise_active_cap(uint8 cap){
     CFE_SB_SendMsg((WISE_ParmCmd_t*)&cmd);
 }
 
+int get_number_of_discharging_caps(uint16 caps[]){
+    int number_of_caps_discharging = 0;
+
+    for(int i = 0; i < 3; i++){
+        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - CAP (%d) state is (%d).", i, caps[i]);
+
+        if(caps[i] == 2){
+            ++number_of_caps_discharging;
+        } 
+    }
+
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - I found CAP Discharging (%d).", number_of_caps_discharging);
+                                
+
+    return number_of_caps_discharging;
+}
 
 void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
     WISE_HkTlm_t *WISE_Hk_Tlm = (WISE_HkTlm_t *) TlmMsgPtr;
@@ -153,7 +171,18 @@ void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
                                 WISE_Hk_Tlm->wiseCapC_State 
                              };
 
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - OG State A (%d).", WISE_Hk_Tlm->wiseCapA_State);
+
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - OG State B (%d).", WISE_Hk_Tlm->wiseCapB_State);
+    
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - OG State C (%d).", WISE_Hk_Tlm->wiseCapC_State);
+
     uint16 active_cap = WISE_Hk_Tlm->wiseActiveCap;
+
+    int number_of_caps_discharging = get_number_of_discharging_caps(cap_states);
     
     switch(WISE_Hk_Tlm->wiseSbcState){
         case 0:
@@ -163,34 +192,27 @@ void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
         case 1:;
              // SBC Powered but not observing
 
-            int number_of_caps_discharging = 0;
-
             for(int i = 0; i < 3; i++){
-                if(cap_states[i] == 2){
-                    ++number_of_caps_discharging;
-                } 
-            }
 
-            for(int i = 0; i < 3; i++){
                 if(cap_charges[i] >= MAX_CHARGE){
                     if(i == active_cap){
                         switch(active_cap){
                             case 0:;
-                                if(cap_charges[1] < cap_charges[2]){
+                                if(cap_charges[1] <= cap_charges[2]){
                                     set_wise_active_cap(1);
                                 } else {
                                     set_wise_active_cap(2);
                                 }
                                 break;
                             case 1:;
-                                if(cap_charges[0] < cap_charges[2]){
+                                if(cap_charges[0] <= cap_charges[2]){
                                     set_wise_active_cap(0);
                                 } else {
                                     set_wise_active_cap(2);
                                 }
                                 break;
                             case 2:;
-                                if(cap_charges[0] < cap_charges[1]){
+                                if(cap_charges[0] <= cap_charges[1]){
                                     set_wise_active_cap(0);
                                 } else {
                                     set_wise_active_cap(1);
@@ -198,20 +220,29 @@ void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
                                 break;
                         }
                     }
-                } else {
-                    if(i != active_cap){
-                        // check if less than two caps are chargeing or the 
-                        if(number_of_caps_discharging < 2){
-                            // if were already fully discharged or already discharging don't do anything
-                            if(cap_charges[i] == 0 || cap_states[i] == 2){
-                                CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
-                                    "PM - CAP Doesn't need to be discharged");
-                            } else {
-                                send_discharge_command(i);
-                            }
+                }
+
+                if(i != active_cap){
+                    // check if less than two caps are chargeing or the
+
+                    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - CAP Discharging (%d).", number_of_caps_discharging);
+                                
+                    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - CAP Current Charge of (%d) is (%d).", i, cap_charges[i]);
+
+                    if(number_of_caps_discharging < 2 && cap_charges[i] >= MAX_CHARGE){
+                        // if were already fully discharged or already discharging don't do anything
+
+                        if(cap_charges[i] == 0 || cap_states[i] == 2){
+                            CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                                "PM - CAP Doesn't need to be discharged");
+                        } else {
+                            send_discharge_command(i);
                         }
-                    }  
-                 }
+                    } 
+                }  
+                
             }
             break;
         case 2:;
