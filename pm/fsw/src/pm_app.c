@@ -120,7 +120,20 @@ int select_active_capacitor(){
     for(int capacitor = 0; capacitor < 3; capacitor++){
 
         if(g_WISE_HkTlm->wiseActiveCap == capacitor){
-            continue;
+            if(cap_charges[capacitor] > (MAX_SAFE_CHARGE - 500)){
+                switch(capacitor){
+                case CAP_A:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_A, CAP_B), min_of_two_charge(CAP_A, CAP_C));
+                    break;
+                case CAP_B:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_B, CAP_A), min_of_two_charge(CAP_B, CAP_C));
+                    break;
+                case CAP_C:;
+                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_C, CAP_A), min_of_two_charge(CAP_C, CAP_B));
+                    break;
+                } 
+            }
+            return;
         }
 
         if(cap_charges[capacitor] < MIN_OBS_CHARGE){
@@ -254,6 +267,10 @@ void capacitor_charge_handler(int buffer){
         return;
     } else {
        for(int capacitor = 0; capacitor < 3; capacitor++){
+
+            if(capacitor == g_WISE_HkTlm->wiseActiveCap){
+                continue;
+            }
 
             if(cap_charges[capacitor] >= MAX_SAFE_CHARGE){
                send_discharge_command(capacitor);
