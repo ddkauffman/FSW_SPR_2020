@@ -1161,7 +1161,7 @@ void PM_ProcessNewAppCmds(CFE_SB_Msg_t* MsgPtr)
             case PM_TO_WISE_CAP_ACTIVE_CC:
 		        g_PM_AppData.HkTlm.usCmdCnt++;		
                	PM_TO_WISE_CAP_ACTIVE_t *CmdPtr = (PM_TO_WISE_CAP_ACTIVE_t *) MsgPtr;
-                send_whe_set_active_command(CmdPtr->setCap);
+                set_wise_active_cap(CmdPtr->setCap);
 		        int value = CmdPtr->setCap; 
 		        g_PM_AppData.HkTlm.actCap = value;
                 CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
