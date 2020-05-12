@@ -56,16 +56,17 @@
 */
 #define MAX_SAFE_CHARGE 10000 // 100%
 #define MIN_SAFE_CHARGE 0 // 0%
-#define MIN_SAFE_DURING_OBS -500 // -5%
+#define MIN_SAFE_DURING_OBS 500 // -5%
 
-#define SECONDS_TO_START_DISCHARGE 3
+#define SECONDS_TO_START_DISCHARGE 300
 #define SECONDS_TO_COMPLETE_OBS 10
 #define PERCENT_DISCHARGE_PER_SECOND 10 
 
 #define MAX_CAP_LOSE_PER_SECOND 700 // 7%
 
-#define ALL_OR_ONE_CAPS_CHARGE_RATE 300 // 3%
-#define TWO_CAPS_CHARGE_RATE 150 // 3%
+#define ALL_CAPS_CHARGE_RATE 100 // 3%
+#define TWO_CAPS_CHARGE_RATE 150 // 1.5%
+#define ONE_CAPS_CHARGE_RATE 300 // 1%
 
 #define MAX_CHARGE 6000
 #define MIN_OBS_CHARGE 1000
@@ -79,7 +80,7 @@
 #define DISCHARGING 2
 #define BROKEN 3
 
-#define OBSERVING 3
+#define OBSERVING 2
 
 /*
 ** Local Structure Declarations
@@ -97,6 +98,8 @@ WISE_HkTlm_t* g_WISE_HkTlm;
 
 uint16 cap_charges[3];
 uint16 cap_states[3];
+uint16 caps_time_to_charge[3];
+
 uint16 gActiveCapcitor;
 uint16 gWiseSbcState;
 
@@ -112,29 +115,66 @@ int cap_pick;
 */
 
 
+int select_max_cap(int capacitor){
+    
+    int selected_capacitor = NULL;
+        
+    switch(capacitor){
+        case CAP_A:;
+            selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_A, CAP_B), max_of_two_charge(CAP_A, CAP_C));
+            break;
+        case CAP_B:;
+            selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_B, CAP_A), max_of_two_charge(CAP_B, CAP_C));
+            break;
+        case CAP_C:;
+            selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_C, CAP_A), max_of_two_charge(CAP_C, CAP_B));
+            break;
+    } 
+        
+    return selected_capacitor;
+} 
+
+int select_min_cap(int capacitor){
+    
+    int selected_capacitor = NULL;
+        
+    switch(capacitor){
+        case CAP_A:;
+            selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_A, CAP_B), min_of_two_charge(CAP_A, CAP_C));
+            break;
+        case CAP_B:;
+            selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_B, CAP_A), min_of_two_charge(CAP_B, CAP_C));
+            break;
+        case CAP_C:;
+            selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_C, CAP_A), min_of_two_charge(CAP_C, CAP_B));
+            break;
+    } 
+        
+    return selected_capacitor;
+}  
 
 int select_active_capacitor(){
 
     int selected_capacitor = NULL;
 
+    if(g_WISE_HkTlm->wiseSbcState == OBSERVING && cap_charges[g_WISE_HkTlm->wiseActiveCap] <= MIN_OBS_CHARGE + 700){
+            int highest = 0;
+            int idx = 0;
+
+            for(int i = 0; i < 3; i++){
+                if(cap_charges[i] > highest){
+                    highest = cap_charges[i];
+                    idx = i; 
+                }
+                
+            }
+            set_wise_active_cap(idx);
+            return NULL;
+    }
+
     for(int capacitor = 0; capacitor < 3; capacitor++){
 
-        if(g_WISE_HkTlm->wiseActiveCap == capacitor){
-            if(cap_charges[capacitor] > (MAX_SAFE_CHARGE - 500)){
-                switch(capacitor){
-                case CAP_A:;
-                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_A, CAP_B), min_of_two_charge(CAP_A, CAP_C));
-                    break;
-                case CAP_B:;
-                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_B, CAP_A), min_of_two_charge(CAP_B, CAP_C));
-                    break;
-                case CAP_C:;
-                    selected_capacitor = min_of_two_charge(min_of_two_charge(CAP_C, CAP_A), min_of_two_charge(CAP_C, CAP_B));
-                    break;
-                } 
-            }
-            return;
-        }
+        
 
         if(cap_charges[capacitor] < MIN_OBS_CHARGE){
             continue;
@@ -148,38 +188,31 @@ int select_active_capacitor(){
             continue;
         }
 
-        if(cap_charges[capacitor] >= MIN_OBS_CHARGE && (cap_charges[g_WISE_HkTlm->wiseActiveCap] < MIN_OBS_CHARGE)){
-            switch(capacitor){
-                case CAP_A:;
-                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_A, CAP_B), max_of_two_charge(CAP_A, CAP_C));
-                    break;
-                case CAP_B:;
-                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_B, CAP_A), max_of_two_charge(CAP_B, CAP_C));
-                    break;
-                case CAP_C:;
-                    selected_capacitor = max_of_two_charge(max_of_two_charge(CAP_C, CAP_A), max_of_two_charge(CAP_C, CAP_B));
-                    break;
-            } 
+       
+
+        if(capacitor == g_WISE_HkTlm->wiseActiveCap && cap_charges[capacitor] >= MAX_SAFE_CHARGE - 500){
+            selected_capacitor = select_min_cap(capacitor);
+            return selected_capacitor;
         }
+        
+        if(cap_charges[capacitor] >= MAX_SAFE_CHARGE - (SECONDS_TO_START_DISCHARGE)){
+            selected_capacitor = select_max_cap(capacitor);
+            return selected_capacitor;
+        }   
     }
 
     return selected_capacitor;
 }
 
-
 int min_of_two_charge(int CAP_1,  int CAP_2){
-    if(cap_charges[CAP_1] <= cap_charges[CAP_2]){
+    if(cap_charges[CAP_1] < cap_charges[CAP_2]){
         return CAP_1;
     } 
     return CAP_2;
 }
 
-
 int max_of_two_charge(int CAP_1,  int CAP_2){
-    if(cap_charges[CAP_1] >= cap_charges[CAP_2]){
-        return CAP_1;
-    } 
-    return CAP_2;
+    return (cap_charges[CAP_1] > cap_charges[CAP_2]) ? CAP_1 : CAP_2;
 }
 
 void send_discharge_command(uint8 cap){
@@ -208,13 +241,11 @@ void send_discharge_command(uint8 cap){
     return 0;
 }
 
-
-int set_wise_active_cap(uint8 cap){
+void set_wise_active_cap(uint8 cap){
 
     CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                         "PM - Thinking abuot sending active for cap (%d)", cap);
 
-    if(cap_states[cap] == 0){
         /* define command to send */
         WISE_ParmCmd_t cmd;
         memset((void*)&cmd, 0x00, sizeof(WISE_ParmCmd_t));
@@ -231,12 +262,41 @@ int set_wise_active_cap(uint8 cap){
 
         /* Send the message on the CFE Bus */
         CFE_SB_SendMsg((WISE_ParmCmd_t*)&cmd);
-
-        return 0;
-    }
-    return 1;
 }
 
+int get_charge_rate(int num_failing_caps){
+    switch(num_failing_caps){
+        case 0:
+            return ALL_CAPS_CHARGE_RATE;
+            break;
+        case 1:
+            return TWO_CAPS_CHARGE_RATE;
+            break;
+        case 2:
+            return ONE_CAPS_CHARGE_RATE;
+            break;
+        case 3:
+            return 0;
+            break;
+    }
+
+    return -1;
+}
+
+int get_number_of_failing_caps(){
+    int num_of_failing_caps = 0;
+
+    for(int i = 0; i < 3; i++){
+        if(cap_states[i] == LEAKING || cap_states[i] == BROKEN){
+            ++num_of_failing_caps;
+        } 
+    }
+
+    CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - There are {%d} failing caps!!!!!!!!!1!!!", num_of_failing_caps);
+
+    return num_of_failing_caps;
+}
 
 int get_number_of_discharging_caps(uint16 caps[]){
     int number_of_caps_discharging = 0;
@@ -253,6 +313,18 @@ int get_number_of_discharging_caps(uint16 caps[]){
     return number_of_caps_discharging;
 }
 
+void calculate_time_to_charge(){
+    for(int i = 0; i < 3; i++){
+
+        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - STEP 1 (%d)", (10000 - cap_charges[i]));
+
+        CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
+                        "PM - STEP 2 (%d)", get_charge_rate(get_number_of_failing_caps()));
+
+        caps_time_to_charge[i] = (10000 - cap_charges[i])/get_charge_rate(get_number_of_failing_caps());
+    }
+}
 
 void capacitor_charge_handler(int buffer){
 
@@ -268,6 +340,7 @@ void capacitor_charge_handler(int buffer){
     } else {
        for(int capacitor = 0; capacitor < 3; capacitor++){
 
+
             if(capacitor == g_WISE_HkTlm->wiseActiveCap){
                 continue;
             }
@@ -275,19 +348,25 @@ void capacitor_charge_handler(int buffer){
             if(cap_charges[capacitor] >= MAX_SAFE_CHARGE){
                send_discharge_command(capacitor);
                return;   
-            }
+            } 
 
-           if(cap_charges[capacitor] >= MAX_SAFE_CHARGE - (SECONDS_TO_START_DISCHARGE * ALL_OR_ONE_CAPS_CHARGE_RATE + buffer)){
+
+           if(cap_charges[capacitor] >= MAX_SAFE_CHARGE - (SECONDS_TO_START_DISCHARGE + (cap_charges[capacitor] * .75)) || caps_time_to_charge[capacitor] < 5){
                 if(cap_states[capacitor] == DISCHARGING){
                     CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                     "PM - CAP Doesn't need to be discharged");
                     continue;
                 }
+
+                
                 if(capacitor == g_WISE_HkTlm->wiseActiveCap && g_WISE_HkTlm->wiseSbcState == OBSERVING){
                     CFE_EVS_SendEvent(PM_MSGID_ERR_EID, CFE_EVS_ERROR,
                             "PM - Active Cap should already discharge during OBS");
                     continue; 
                 } 
+                if(cap_charges[capacitor] < 5500){
+                    continue;
+                }
                 send_discharge_command(capacitor); 
            }
        } 
@@ -306,6 +385,8 @@ void PM_ProcessWISEData(CFE_SB_Msg_t* TlmMsgPtr){
     cap_states[0] = g_WISE_HkTlm->wiseCapA_State;
     cap_states[1] = g_WISE_HkTlm->wiseCapB_State,
     cap_states[2] = g_WISE_HkTlm->wiseCapC_State; 
+
+    calculate_time_to_charge();
 
     switch(g_WISE_HkTlm->wiseSbcState){
         case 0:
